@@ -3270,6 +3270,30 @@ fn all_sounds(settings: &Settings) -> std::collections::HashMap<String, Exported
     out
 }
 
+/// Off the main thread; see `export_filter`. The text is built by the panel
+/// that has the figures; this only asks where it goes.
+#[tauri::command(async)]
+fn save_text_file(
+    app: AppHandle,
+    suggested: String,
+    kind: String,
+    extension: String,
+    text: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .add_filter(kind, &[extension.as_str()])
+        .set_file_name(&suggested)
+        .blocking_save_file();
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    std::fs::write(&path, text).map_err(|e| e.to_string())?;
+    Ok(Some(path.file_name().unwrap_or_default().to_string_lossy().into_owned()))
+}
+
 /// Off the main thread; see `export_filter`.
 #[tauri::command(async)]
 fn export_settings(app: AppHandle) -> Result<Option<String>, String> {
@@ -4050,6 +4074,7 @@ pub fn run() {
             viewing,
             export_filter,
             export_settings,
+            save_text_file,
             import_settings,
             import_filter,
             ticker_busy,
