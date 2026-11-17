@@ -16,7 +16,8 @@
     "publish": "node scripts/publish.mjs",
     "test": "node scripts/test.mjs",
     "deb": "node scripts/build-linux.mjs",
-    "all": "node scripts/build-all.mjs"
+    "all": "node scripts/build-all.mjs",
+    "test:js": "node --test \"src/**/*.test.js\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
