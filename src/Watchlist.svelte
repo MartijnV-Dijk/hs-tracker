@@ -6,6 +6,7 @@
   import { DEFAULT_LOOK, EFFECTS, GLOW_MAX, RARITY_TINT, accentOf, isCustom, lookFor, nameStyle } from './look.js';
   import { flush, save, startSettings, store } from './settings.svelte.js';
   import { BUILT_IN, soundUrl, play } from './audio.js';
+  import { matchItemNames } from './itemlist.js';
 
   // Only named items can be listed. The parser leaves an ordinary pickup
   // nameless, so a list holding a base has nothing to match and never chimes.
@@ -804,6 +805,41 @@
     }
   }
 
+  /// A text file becomes a list of its own, named after the file, rather than
+  /// being poured into whichever list happens to be open: an import that goes
+  /// wrong is then one list to delete, not a list to pick back apart.
+  let textPicker = $state();
+  const UNKNOWN_SHOWN = 5;
+  async function importTextList(event) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file || !filter) return;
+    const { found, unknown } = matchItemNames(await file.text(), NAMED.map((it) => it.name));
+    if (!found.length) {
+      notify(say('no item names found in {file}', { file: file.name }));
+      return;
+    }
+    filter.lists = [
+      ...lists,
+      {
+        id: id(),
+        name: file.name.replace(/\.[^.]+$/, ''),
+        enabled: true,
+        volume: 0.7,
+        items: found.sort((a, b) => a.localeCompare(b)),
+        rules: [],
+      },
+    ];
+    selected = filter.lists.length - 1;
+    save();
+    const missed = unknown.slice(0, UNKNOWN_SHOWN).join(', ') + (unknown.length > UNKNOWN_SHOWN ? ', …' : '');
+    notify(
+      unknown.length
+        ? say('{n} items imported; not recognised: {names}', { n: found.length, names: missed })
+        : say('{n} items imported', { n: found.length }),
+    );
+  }
+
   /// A copy gets fresh list ids so it cannot fight with the original — and a
   /// list's sound is a file named after its id, so the copy has to be given
   /// one of its own too. Without that the copy came out mute while the button
@@ -980,6 +1016,8 @@
           <button class="link" disabled={selected === 0} onclick={() => moveList(-1)} title={t("Move up — a higher list wins a conflict")}>{t("▲ up")}</button>
           <button class="link" disabled={selected >= lists.length - 1} onclick={() => moveList(1)} title={t("Move down")}>{t("▼ down")}</button>
           <button class="btn sm" style:--btn={btn('button')} style:--btn-hover={btn('button_hover')} style:--btn-down={btn('button_down')} onclick={addList}>{t("+ list")}</button>
+          <button class="btn sm" style:--btn={btn('button')} style:--btn-hover={btn('button_hover')} style:--btn-down={btn('button_down')} onclick={() => textPicker.click()} title={t("Make a list from a text file with one item name per line")}>{t("+ from text…")}</button>
+          <input bind:this={textPicker} type="file" accept=".txt,text/plain" hidden onchange={importTextList} />
         </div>
       </div>
 
