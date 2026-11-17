@@ -219,7 +219,11 @@
             <div class="sub">
               {run.character ?? t('unknown character')}
               {#if run.level}· {t('Lv')} {run.level}{/if}
-              {#if run.herolevel}· {t('HLv')} {run.herolevel}{/if}
+              {#if run.herolevel_start && run.herolevel_start !== run.herolevel}
+                · {t('HLv')} {run.herolevel_start} → {run.herolevel}
+              {:else if run.herolevel}
+                · {t('HLv')} {run.herolevel}
+              {/if}
               {#if run.difficulty != null}· {difficulty(run.difficulty, run.hell_sub)}{/if}
             </div>
             <div class="rates">
