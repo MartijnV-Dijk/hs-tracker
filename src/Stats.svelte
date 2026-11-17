@@ -10,6 +10,7 @@
   import { ITEMS, DROP_CHASE, DROP_PLACES, DROP_RATE, DROP_ZONES, RARITY_BY_NAME, TIER_BY_NAME, rarityByName, tierLabel, zoneCode } from './items.js';
   import { itemName, language, locale, nameOf, placeList, satanicZoneName, say, t, typeLabel } from './say.svelte.js';
   import { fmt, difficulty, RARITIES, RARITY_CLASS } from './format.js';
+  import HeroForecast from './HeroForecast.svelte';
 
   // The four counters the backend keeps, and what to call them. Every resource
   // it names belongs to one of them; see `RESOURCES` in stats.rs.
@@ -713,6 +714,14 @@
           <div class="box-head"><span class="accent">{t("Session rates")}</span></div>
           <canvas bind:this={canvas}></canvas>
         </div>
+
+        {#if snap?.character?.herolevel}
+          <HeroForecast
+            herolevel={snap.character.herolevel}
+            xpInLevel={snap.xp?.total ?? 0}
+            xpPerHour={snap.xp?.per_hour ?? 0}
+          />
+        {/if}
       </div>
     </div>
   </div>

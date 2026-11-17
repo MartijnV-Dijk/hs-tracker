@@ -290,6 +290,10 @@ pub struct Run {
     /// without them, so any comparison built on this history needs them.
     #[serde(default)]
     pub herolevel: i64,
+    /// The hero level the run opened on, so a run says how many it gained.
+    /// Zero on runs filed before this was kept.
+    #[serde(default)]
+    pub herolevel_start: i64,
     #[serde(default)]
     pub mf: i64,
     #[serde(default)]
@@ -451,6 +455,7 @@ pub struct GameStats {
     /// Where the floor stood before the last save that raised it, so a climb
     /// the next saves disown can be taken back.
     xp_before_climb: Option<i64>,
+    herolevel_at_start: i64,
     /// totals restored from the last run: the next packet of that kind
     /// re-anchors on them instead of counting the difference as earned
     stale_bank: bool,
@@ -678,6 +683,7 @@ impl Default for GameStats {
             xp_authoritative: false,
             xp_dip: None,
             xp_before_climb: None,
+            herolevel_at_start: 0,
             stale_bank: false,
             banked: 0,
             stale_save: false,
@@ -838,6 +844,13 @@ impl GameStats {
         self.revision = revision + 1;
         // the journal, the series and the character all just went
         self.extra_rev = extra_rev + 1;
+        self.herolevel_at_start = self.character.as_ref().map_or(0, |c| c.herolevel);
+    }
+
+    fn note_hero_level(&mut self, level: i64) {
+        if self.herolevel_at_start == 0 && level > 0 {
+            self.herolevel_at_start = level;
+        }
     }
 
     /// A reset taken across a stretch nothing was watching: the game starting,
@@ -982,6 +995,7 @@ impl GameStats {
             difficulty: self.character.as_ref().map_or(0, |c| c.difficulty),
             hell_sub: self.character.as_ref().map_or(0, |c| c.hell_sub),
             herolevel: self.character.as_ref().map_or(0, |c| c.herolevel),
+            herolevel_start: self.herolevel_at_start,
             // the last heartbeat's figure, which is what "at the end" means
             mf: self.mf,
             hardcore: self.character.as_ref().is_some_and(|c| c.hardcore),
@@ -1596,6 +1610,7 @@ impl GameStats {
                         hardcore: *hardcore == 1,
                         season: *season,
                     });
+                    self.note_hero_level(*herolevel);
                 }
                 // Currency usually arrives before the purse is known, so the
                 // last packet is read again now that the save has named one.
@@ -1673,6 +1688,7 @@ impl GameStats {
                         self.extra_rev += 1;
                     }
                 }
+                self.note_hero_level(*hlevel);
             }
             GameEvent::ItemAdded {
                 rarity,
@@ -4304,6 +4320,28 @@ mod tests {
     /// A session that has been running for a while, without waiting for one.
     fn aged(secs: u64) -> GameStats {
         GameStats { start: Instant::now() - Duration::from_secs(secs), ..GameStats::default() }
+    }
+
+    #[test]
+    fn a_run_remembers_the_hero_level_it_started_on() {
+        let mut s = aged(600);
+        s.apply(&account_at_level(50_000_000, 91));
+        s.apply(&account_at_level(53_600_000, 91));
+        s.apply(&account_at_level(1_289, 92));
+        let run = s.finish().expect("ten minutes with xp earned is a run");
+        assert_eq!((run.herolevel_start, run.herolevel), (91, 92));
+    }
+
+    #[test]
+    fn the_run_after_a_reset_starts_on_the_level_reached() {
+        let mut s = aged(600);
+        s.apply(&account_at_level(50_000_000, 91));
+        s.apply(&account_at_level(1_289, 92));
+        s.reset();
+        s.start = Instant::now() - Duration::from_secs(600);
+        s.apply(&account_at_level(900_000, 92));
+        let run = s.finish().expect("xp earned after the reset");
+        assert_eq!(run.herolevel_start, 92);
     }
 
     /// You pause because you are going to town, and going to town is a
