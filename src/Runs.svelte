@@ -1,14 +1,20 @@
 <script>
-  import { nameOf, say, t, locale } from './say.svelte.js';
+  import { nameOf, say, t } from './say.svelte.js';
   import { invoke } from './bridge.js';
   import { fmt, RARITIES, RARITY_CLASS, difficulty } from './format.js';
   import { art } from './skin.svelte.js';
   import { listen } from './bridge.js';
   import { tierLabel } from './items.js';
   import { cardPng, drawRunCard } from './runcard.js';
+  import { zoneName } from './buffs.js';
+  import { perHour, runDay as day, runDrops as drops, tallyTotal } from './runfigures.js';
+  import { csvDelimiter, localStamp, toCsv } from './runscsv.js';
+  import RunCompare from './RunCompare.svelte';
 
   let runs = $state([]);
   let picked = $state(0);
+  let comparing = $state(false);
+  let comparedWith = $state(null);
 
   // A run is filed when the session ends — the reset button, the hotkey, the
   // tray, the game closing, the app quitting. So the list only grows while this
@@ -40,17 +46,55 @@
     return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
   }
 
-  const day = (ms) =>
-    new Date(ms).toLocaleString(locale(), { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-
-  const perHour = (value, secs) => (secs > 0 ? Math.round((value * 3600) / secs) : 0);
-
   let run = $derived(runs[picked] ?? null);
+  let other = $derived(comparing ? (runs.find((r) => r.started_ms === comparedWith) ?? null) : null);
+
+  // While comparing, the run already open stays put and a click names the run
+  // to set beside it, so the two are picked the same way the list always works.
+  function choose(index) {
+    if (comparing && index !== picked) comparedWith = runs[index].started_ms;
+    else picked = index;
+  }
+
+  function toggleCompare() {
+    comparing = !comparing;
+    comparedWith = null;
+  }
 
   // what a run is worth in one line, for the list
   const headline = (r) => `${fmt(r.gold)} ${t('gold')} · ${fmt(r.kills)} ${t('kills')}`;
 
-  const drops = (r) => RARITIES.reduce((sum, name) => sum + (r.items?.[name] ?? 0), 0);
+  const CSV_HEADER = [
+    'started', 'minutes', 'character', 'level', 'hero level', 'difficulty', 'season', 'hardcore',
+    'magic find', 'gold', 'gold/h', 'xp', 'xp/h', 'kills', 'kills/h', ...RARITIES, 'drops', 'drops/h',
+    'bosses', 'chests', 'finds', 'top zone',
+  ];
+  const csvRow = (r) => [
+    localStamp(r.started_ms), Math.round(r.secs / 60), r.character ?? '', r.level, r.herolevel,
+    difficulty(r.difficulty, r.hell_sub) ?? '', r.season, r.hardcore ? 'yes' : 'no', r.mf,
+    r.gold, perHour(r.gold, r.secs), r.xp, perHour(r.xp, r.secs), r.kills, perHour(r.kills, r.secs),
+    ...RARITIES.map((name) => r.items?.[name] ?? 0), drops(r), perHour(drops(r), r.secs),
+    tallyTotal(r, 'boss'), tallyTotal(r, 'chest'), r.notable?.length ?? 0,
+    r.zones?.length ? zoneName(r.zones[0][0]) : '',
+  ];
+
+  let exported = $state('');
+  let exportTimer;
+  async function exportCsv() {
+    clearTimeout(exportTimer);
+    try {
+      const name = await invoke('save_text_file', {
+        suggested: 'hs-tracker-runs.csv',
+        kind: 'CSV',
+        extension: 'csv',
+        text: toCsv(CSV_HEADER, runs.map(csvRow), csvDelimiter(navigator.language)),
+      });
+      exported = name ? say('saved as {name}', { name }) : '';
+    } catch (e) {
+      exported = String(e);
+    }
+    exportTimer = setTimeout(() => (exported = ''), 4000);
+  }
 
   // The four numbers a run is read by, in the order the panel shows them.
   const RATES = [
@@ -107,7 +151,7 @@
   // drawn on the card you can copy from here, and were the one thing on that
   // picture the panel behind it could not show you. Runs filed before 0.9.8
   // carry none, which is what the empty guard is for.
-  const tallies = (r, group) => (r.tallies ?? []).filter((t) => t.group === group && t.total > 0);
+  const tallies = (r, group) => (r.tallies ?? []).filter((row) => row.group === group && row.total > 0);
   const bosses = (r) => tallies(r, 'boss');
   const chests = (r) => tallies(r, 'chest');
   // Cleared rather than killed — see the note beside TALLIES in stats.rs.
@@ -170,11 +214,16 @@
       <div class="list" style:border-image-source="url({art('chip_dark')})">
         <div class="head">
           <span class="accent">{t("Runs")}</span>
+          {#if runs.length > 1}
+            <button class="card-btn" class:active={comparing} onclick={toggleCompare} title={t("Set two runs side by side")}>
+              {comparing ? t('Done') : t('Compare')}
+            </button>
+          {/if}
           <span class="right">{runs.length}</span>
         </div>
         <div class="scroll">
           {#each runs as r, i}
-            <button class="row" class:on={i === picked} onclick={() => (picked = i)}>
+            <button class="row" class:on={i === picked} class:against={comparing && r.started_ms === comparedWith} onclick={() => choose(i)}>
               <span class="when">{day(r.started_ms)}</span>
               <span class="len">{dur(r.secs)}</span>
               <span class="sum">{headline(r)}</span>
@@ -191,9 +240,27 @@
         >
           {armed ? t('Sure? — this cannot be undone') : t('Clear history')}
         </button>
+        <button
+          class="btn"
+          style:--btn="url({art('button')})"
+          style:--btn-hover="url({art('button_hover')})"
+          style:--btn-down="url({art('button_down')})"
+          onclick={exportCsv}
+          title={t("Save every run as a spreadsheet file")}
+        >
+          {exported || t('Export CSV…')}
+        </button>
       </div>
 
-      {#if run}
+      {#if comparing}
+        <div class="detail">
+          {#if run && other}
+            <RunCompare a={run} b={other} />
+          {:else}
+            <div class="empty">{say('Pick a run in the list to set beside {day}.', { day: run ? day(run.started_ms) : '' })}</div>
+          {/if}
+        </div>
+      {:else if run}
         <div class="detail">
           <div class="box" style:border-image-source="url({art('chip_dark')})">
             <div class="head">
@@ -433,6 +500,8 @@
   }
   .row:hover { background: rgba(0, 0, 0, 0.35); }
   .row.on { border-left-color: var(--edge-2b); background: rgba(var(--pick-rgb), 0.25); }
+  .row.against { border-left-color: var(--gold-2); background: rgba(var(--pick-rgb), 0.15); }
+  .card-btn.active { color: var(--gold-2); border-color: var(--edge-3); }
   .when { grid-area: when; }
   .len { grid-area: len; color: var(--dim-2); }
   .sum { grid-area: sum; font-size: 10px; color: var(--edge-8); }
