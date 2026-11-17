@@ -92,7 +92,7 @@
     {#if error}<div class="error">{error}</div>{/if}
     {#if report}
       <div class="summary">
-        {report.class ?? t('unknown class')} · {t('Lv')} {report.level}{#if report.skill} · {report.skill}{/if}
+        {report.class ?? t('unknown class')} · {t('Lv')} {report.level}{#if report.skill}{' · '}{report.skill}{/if}
         · <b class="c-gold">{fmt(Math.round(report.dps))}</b> {t('DPS')}
       </div>
     {/if}
