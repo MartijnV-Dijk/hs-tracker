@@ -26,6 +26,21 @@ test('a place shared by several upgrades ranks above one that holds a single one
   assert.equal(places[0].chance, 1 / 20_000 + 1 / 10_000);
 });
 
+test('a boss drop with no published odds still names its boss', () => {
+  const bossLookup = dropLookup({
+    rate: {},
+    chase: {},
+    places: { "grimbone's marchers": ['Grimbone'], 'crown of doom': ['King Rakhul (Inferno Only)'] },
+  });
+  assert.deepEqual(bossLookup("Grimbone's Marchers"), { anywhere: 0, there: 0, places: ['Grimbone'] });
+  const { places, unknown } = farmPlaces(["Grimbone's Marchers", 'Crown of Doom'], bossLookup);
+  assert.deepEqual(places.map((p) => [p.place, p.chance, p.items]), [
+    ['Grimbone', 0, ["Grimbone's Marchers"]],
+    ['King Rakhul (Inferno Only)', 0, ['Crown of Doom']],
+  ]);
+  assert.deepEqual(unknown, []);
+});
+
 test('untied and unknown items are set apart, and a name counts once', () => {
   const result = farmPlaces(["Majorie's Belt", 'Mystery', "Majorie's Belt"], lookup);
   assert.deepEqual(result.places, []);

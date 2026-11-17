@@ -8,9 +8,11 @@ export function oneIn(rate) {
 
 // The build page's names come from HSPlanner and the drop tables from the
 // game, and the two spell punctuation differently, so they meet on the same
-// loose key a watchlist import uses.
+// loose key a watchlist import uses. A boss's own drops have a place and no
+// published odds, so every table is indexed, not only the one with rates.
 export function dropLookup({ rate, chase, places }) {
-  const byKey = new Map(Object.keys(rate).map((key) => [nameKey(key), key]));
+  const keys = new Set([...Object.keys(rate), ...Object.keys(chase), ...Object.keys(places)]);
+  const byKey = new Map([...keys].map((key) => [nameKey(key), key]));
   return (name) => {
     const key = byKey.get(nameKey(name));
     if (!key) return null;
