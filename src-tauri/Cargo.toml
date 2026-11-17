@@ -48,6 +48,12 @@ etherparse = "0.16"
 netstat2 = "0.11"
 sysinfo = "0.33"
 discord-rich-presence = "1.1.0"
+# The build page reads HSPlanner share links and measures gear swaps with its
+# damage engine and game data (MIT). Pinned to one commit: its build format
+# and data move between releases, and a season bump should be a deliberate edit.
+hsplanner-build = { git = "https://github.com/HeroSiegePlanner/HSPlanner", rev = "416b535754744581fc601ca2a97b25d3a91bb120" }
+hsplanner-engine = { package = "HSPlanner", git = "https://github.com/HeroSiegePlanner/HSPlanner", rev = "416b535754744581fc601ca2a97b25d3a91bb120" }
+rayon = "1"
 
 # autostart is a registry value on Windows and a .desktop file elsewhere
 [target.'cfg(windows)'.dependencies]

@@ -420,5 +420,8 @@ See [DEVELOPING.md](DEVELOPING.md).
   [hero-siege-stats](https://github.com/GuilhermeFaga/hero-siege-stats) and
   [Hero-Siege-Companion](https://github.com/DemonSkye/Hero-Siege-Companion).
 - Item names, rarities and grades are generated from Hero siege datamined data
+- The Build page decodes share links and measures damage with
+  [HSPlanner](https://github.com/HeroSiegePlanner/HSPlanner)'s engine and game
+  data, MIT licensed, copyright (c) 2026 zium.
 
 Released under the [MIT license](LICENSE).

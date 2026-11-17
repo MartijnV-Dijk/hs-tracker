@@ -1,5 +1,6 @@
 mod items;
 mod collection;
+mod build_calc;
 mod checklist;
 mod log;
 mod parser;
@@ -587,6 +588,8 @@ pub struct Settings {
     /// Which reading sits in which cell of the panel. Empty means the panel is
     /// laid out as it ships; see `OVERLAY_SLOTS`.
     pub overlay_slots: Vec<String>,
+    /// The HSPlanner share link the build page last measured.
+    pub build_link: String,
 }
 
 impl Default for Settings {
@@ -670,6 +673,7 @@ impl Default for Settings {
             x11_backend: false,
             hidden: Vec::new(),
             overlay_slots: Vec::new(),
+            build_link: String::new(),
         }
     }
 }
@@ -3270,6 +3274,14 @@ fn all_sounds(settings: &Settings) -> std::collections::HashMap<String, Exported
     out
 }
 
+/// Off the main thread: measuring every swap takes a second or two, and the
+/// windows keep drawing meanwhile.
+#[tauri::command(async)]
+fn analyse_build(link: String) -> Result<build_calc::BuildReport, String> {
+    const SWAPS_PER_SLOT: usize = 3;
+    build_calc::report(&link, SWAPS_PER_SLOT)
+}
+
 /// Off the main thread; see `export_filter`.
 #[tauri::command(async)]
 fn export_settings(app: AppHandle) -> Result<Option<String>, String> {
@@ -4050,6 +4062,7 @@ pub fn run() {
             viewing,
             export_filter,
             export_settings,
+            analyse_build,
             import_settings,
             import_filter,
             ticker_busy,

@@ -13,6 +13,7 @@
   import { update, lookForUpdate } from './update.svelte.js';
   import Codex from './Codex.svelte';
   import Collection from './Collection.svelte';
+  import Build from './Build.svelte';
   import { startSettings, store } from './settings.svelte.js';
 
   // Steam in a sandbox is a Linux problem and naming it on Windows sends a
@@ -54,6 +55,7 @@
     { id: 'codex', group: 'Game', label: 'Items', component: Codex },
     { id: 'collection', group: 'Game', label: 'Collection', component: Collection },
     { id: 'shop', group: 'Game', label: 'Shopping List', component: Shop },
+    { id: 'build', group: 'Game', label: 'Build', component: Build },
     { id: 'streaming', group: 'App', label: 'Streaming', component: Settings, view: 'streaming', needsOverlay: true },
     { id: 'settings', group: 'App', label: 'Settings', component: Settings, view: 'general' },
     { id: 'about', group: 'App', label: 'About', component: About },
