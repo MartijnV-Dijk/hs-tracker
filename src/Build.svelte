@@ -6,6 +6,7 @@
   import { DROP_CHASE, DROP_PLACES, DROP_RATE } from './items.js';
   import { save, startSettings, store } from './settings.svelte.js';
   import { dropLookup, farmPlaces, oneIn } from './farm.js';
+  import { defenseChange, keepsDefense } from './defense.js';
 
   startSettings();
   let settings = $derived(store.settings);
@@ -52,7 +53,13 @@
     measure();
   });
 
-  const bestPerSlot = $derived((report?.slots ?? []).map((slot) => slot.swaps[0]?.name).filter(Boolean));
+  const costOf = (swap) => defenseChange(report.defense, swap.defense);
+
+  // Farming advice follows the swaps you could make today without dying more:
+  // a slot whose best swap trades defense away offers its best safe one instead.
+  const bestPerSlot = $derived(
+    (report?.slots ?? []).map((slot) => slot.swaps.find((swap) => keepsDefense(costOf(swap)))?.name).filter(Boolean),
+  );
   const farm = $derived(farmPlaces(bestPerSlot, lookup));
 
   function where(name) {
@@ -65,6 +72,21 @@
   }
 
   const percent = (gain) => `+${(gain * 100).toFixed(gain < 0.1 ? 1 : 0)}%`;
+  const signed = (value) => `${value > 0 ? '+' : ''}${Math.round(value)}`;
+  const ONE_PERCENT = 0.01;
+
+  function costParts(swap) {
+    const change = costOf(swap);
+    const parts = [];
+    if (Math.abs(change.resistance) >= 1)
+      parts.push({ text: `${t('res')} ${Math.round(report.defense.lowest_resistance)} → ${Math.round(swap.defense.lowest_resistance)}`, up: change.resistance > 0 });
+    if (Math.abs(change.elemental) >= ONE_PERCENT)
+      parts.push({ text: `${t('vs elements')} ${signed(change.elemental * 100)}%`, up: change.elemental > 0 });
+    if (Math.abs(change.physical) >= ONE_PERCENT)
+      parts.push({ text: `${t('vs physical')} ${signed(change.physical * 100)}%`, up: change.physical > 0 });
+    if (Math.abs(change.life) >= 1) parts.push({ text: `${t('life')} ${signed(change.life)}`, up: change.life > 0 });
+    return parts;
+  }
 </script>
 
 <div class="panel">
@@ -96,6 +118,9 @@
         {report.class ?? t('unknown class')} · {t('Lv')} {report.level}{#if report.skill}{' · '}{report.skill}{/if}
         · <b class="c-gold">{fmt(Math.round(report.dps))}</b> {t('DPS')}
       </div>
+      <div class="dim">
+        {t('lowest resistance')} {Math.round(report.defense.lowest_resistance)} · {t('life')} {fmt(Math.round(report.defense.life))}
+      </div>
     {/if}
   </div>
 
@@ -113,7 +138,15 @@
               <div class="swap">
                 <span class="name {RARITY_CLASS[RARITY[swap.rarity]] ?? ''}">{swap.name}</span>
                 <span class="dim">{swap.grade ?? ''}</span>
+                {#if !keepsDefense(costOf(swap))}<span class="trade">{t('costs defense')}</span>{/if}
                 <span class="gain">{percent(swap.gain)}</span>
+              </div>
+              <div class="cost">
+                {#each costParts(swap) as part}
+                  <span class:up={part.up} class:down={!part.up}>{part.text}</span>
+                {:else}
+                  <span class="dim">{t('defense unchanged')}</span>
+                {/each}
               </div>
               <div class="where dim">{where(swap.name)}</div>
             {:else}
@@ -125,7 +158,7 @@
 
       <div class="box side" style:border-image-source="url({art('chip_dark')})">
         <div class="head"><span class="accent">{t('Where to farm')}</span></div>
-        <div class="note">{t('For the best swap in each slot: the places most likely to drop one of them.')}</div>
+        <div class="note">{t('For the best swap in each slot that keeps your defense: the places most likely to drop one of them.')}</div>
         {#each farm.places.slice(0, PLACES_SHOWN) as place}
           <div class="place">
             <div class="placehead">
@@ -229,6 +262,10 @@
   .swap { display: flex; align-items: baseline; gap: 8px; }
   .swap .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .gain { color: var(--gold-2); font-variant-numeric: tabular-nums; }
+  .trade { font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px; color: #e08a8a; }
+  .cost { display: flex; flex-wrap: wrap; gap: 0 10px; padding-left: 8px; font-size: 10px; }
+  .cost .up { color: #7cc47c; }
+  .cost .down { color: #e08a8a; }
   .where { padding-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .place { display: flex; flex-direction: column; padding: 2px 0; }

@@ -1,5 +1,10 @@
 use hsplanner_build::{BuildSnapshot, codec, gear};
-use hsplanner_engine::calc::{data, planner::combined_dps, types::ItemBase};
+use hsplanner_engine::calc::{
+    data,
+    planner::{combined_dps, evaluate},
+    skills::ELEMENTS,
+    types::ItemBase,
+};
 use rayon::prelude::*;
 use serde::Serialize;
 
@@ -16,7 +21,19 @@ pub struct BuildReport {
     pub level: u32,
     pub skill: Option<String>,
     pub dps: f64,
+    pub defense: Defense,
     pub slots: Vec<SlotReport>,
+}
+
+/// What keeps the character alive, as HSPlanner works it out. Effective HP is
+/// life once resistances and damage reduction are counted, so it already knows
+/// where a resistance stops helping. The weakest element is the one that kills.
+#[derive(Debug, Serialize)]
+pub struct Defense {
+    pub lowest_resistance: f64,
+    pub elemental_ehp: f64,
+    pub physical_ehp: f64,
+    pub life: f64,
 }
 
 #[derive(Serialize)]
@@ -34,6 +51,7 @@ pub struct Swap {
     pub requires_level: Option<u32>,
     pub dps: f64,
     pub gain: f64,
+    pub defense: Defense,
 }
 
 pub fn report(link: &str, swaps_per_slot: usize) -> Result<BuildReport, String> {
@@ -56,6 +74,7 @@ fn measure(snapshot: BuildSnapshot, swaps_per_slot: usize) -> Result<BuildReport
         level: snapshot.level,
         skill: snapshot.active_skill_ids.first().and_then(|id| data::skill_name_by_id(id)).map(str::to_owned),
         dps,
+        defense: defense_of(&snapshot),
         slots: SLOTS.iter().map(|slot| slot_report(&snapshot, slot, dps, swaps_per_slot)).collect(),
     })
 }
@@ -64,7 +83,8 @@ fn measure(snapshot: BuildSnapshot, swaps_per_slot: usize) -> Result<BuildReport
 /// rolls HSPlanner gives a new copy, and measured with the same calculation
 /// that produced the build's own figure. HSPlanner lets any level equip
 /// anything, so the level requirement is checked here. Only swaps that raise
-/// the figure are kept.
+/// the figure are kept, and only those kept get the full stat sheet their
+/// defense is read from: it costs far more than the damage figure alone.
 fn slot_report(snapshot: &BuildSnapshot, slot: &str, base_dps: f64, keep: usize) -> SlotReport {
     let worn = snapshot.inventory.get(slot);
     let candidates: Vec<&ItemBase> = data::data()
@@ -75,28 +95,56 @@ fn slot_report(snapshot: &BuildSnapshot, slot: &str, base_dps: f64, keep: usize)
         .filter(|base| worn.is_none_or(|item| item.base_id != base.id))
         .filter(|base| gear::accepts(snapshot, slot, base, false))
         .collect();
-    let mut swaps: Vec<Swap> = candidates
+    let mut measured: Vec<(&ItemBase, f64)> = candidates
         .par_iter()
         .filter_map(|base| {
-            let mut trial = snapshot.clone();
-            gear::commit(&mut trial, slot, Some(gear::make_item(&base.id).ok()?), false, false).ok()?;
-            let dps = combined_dps(&trial.planner_input());
-            (dps > base_dps).then(|| Swap {
+            let dps = combined_dps(&wearing(snapshot, slot, base)?.planner_input());
+            (dps > base_dps).then_some((*base, dps))
+        })
+        .collect();
+    measured.sort_by(|a, b| b.1.total_cmp(&a.1));
+    measured.truncate(keep);
+    let swaps = measured
+        .into_iter()
+        .filter_map(|(base, dps)| {
+            Some(Swap {
                 name: base.name.clone(),
                 rarity: base.rarity.clone(),
                 grade: base.grade.clone(),
                 requires_level: base.requires_level,
                 dps,
                 gain: dps / base_dps - 1.0,
+                defense: defense_of(&wearing(snapshot, slot, base)?),
             })
         })
         .collect();
-    swaps.sort_by(|a, b| b.dps.total_cmp(&a.dps));
-    swaps.truncate(keep);
     SlotReport {
         slot: slot.to_owned(),
         worn: worn.and_then(|item| data::get_item(&item.base_id)).map(|base| base.name.clone()),
         swaps,
+    }
+}
+
+fn wearing(snapshot: &BuildSnapshot, slot: &str, base: &ItemBase) -> Option<BuildSnapshot> {
+    let mut trial = snapshot.clone();
+    gear::commit(&mut trial, slot, Some(gear::make_item(&base.id).ok()?), false, false).ok()?;
+    Some(trial)
+}
+
+fn defense_of(snapshot: &BuildSnapshot) -> Defense {
+    let sheet = evaluate(&snapshot.planner_input()).current;
+    let middle = |key: &str| sheet.stats.get(key).map_or(0.0, |(low, high)| (low + high) / 2.0);
+    let ehp = |kind: &str| {
+        sheet.ehp.entries.iter().find(|entry| entry.damage_type == kind).and_then(|entry| entry.ehp).unwrap_or(0.0)
+    };
+    Defense {
+        lowest_resistance: ELEMENTS
+            .iter()
+            .map(|element| middle(&format!("{element}_resistance")))
+            .fold(f64::INFINITY, f64::min),
+        elemental_ehp: ELEMENTS.iter().map(|element| ehp(element)).fold(f64::INFINITY, f64::min),
+        physical_ehp: ehp("physical"),
+        life: middle("life"),
     }
 }
 
@@ -132,6 +180,21 @@ mod tests {
         let report = report(EXAMPLE, 10).expect("the example decodes");
         for swap in report.slots.iter().flat_map(|slot| &slot.swaps) {
             assert!(swap.requires_level.is_none_or(|needed| needed <= report.level), "{} is out of reach", swap.name);
+        }
+    }
+
+    #[test]
+    fn the_build_and_every_swap_report_the_defense_they_leave() {
+        let report = report(EXAMPLE, 3).expect("the example decodes");
+        let sane = |defense: &Defense| {
+            defense.life > 0.0
+                && defense.lowest_resistance.is_finite()
+                && defense.elemental_ehp > 0.0
+                && defense.physical_ehp > 0.0
+        };
+        assert!(sane(&report.defense), "the build itself: {:?}", report.defense);
+        for swap in report.slots.iter().flat_map(|slot| &slot.swaps) {
+            assert!(sane(&swap.defense), "{}: {:?}", swap.name, swap.defense);
         }
     }
 
