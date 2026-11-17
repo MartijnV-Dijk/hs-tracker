@@ -445,6 +445,12 @@ pub struct GameStats {
     gold_mode: Option<&'static str>,
     last_currency: Option<crate::parser::Currency>,
     xp_authoritative: bool,
+    /// A save that came in below the floor with no level-up behind it, held
+    /// until the next save confirms or contradicts it. See `apply_saved_xp`.
+    xp_dip: Option<i64>,
+    /// Where the floor stood before the last save that raised it, so a climb
+    /// the next saves disown can be taken back.
+    xp_before_climb: Option<i64>,
     /// totals restored from the last run: the next packet of that kind
     /// re-anchors on them instead of counting the difference as earned
     stale_bank: bool,
@@ -670,6 +676,8 @@ impl Default for GameStats {
             gold_mode: None,
             last_currency: None,
             xp_authoritative: false,
+            xp_dip: None,
+            xp_before_climb: None,
             stale_bank: false,
             banked: 0,
             stale_save: false,
@@ -1489,28 +1497,11 @@ impl GameStats {
                     // only trust a diff between two authoritative totals; the
                     // first one just calibrates (guild-XP guesses precede it)
                     if self.xp_authoritative {
-                        let diff = experience - self.total_xp;
-                        if diff > 0 {
-                            self.xp_earned = self.xp_earned.saturating_add(diff);
-                            self.progressed();
-                        } else if self.gained_a_hero_level(*herolevel) {
-                            // `experience` is the XP inside the current hero
-                            // level and starts again at each one, so a level-up
-                            // arrives as a large negative diff. Read as "no
-                            // progress" it discards the whole crossing, which
-                            // is why the figure ran low for anyone levelling
-                            // often.
-                            //
-                            // What can be recovered is what carried over. The
-                            // rest — from the last save up to the level's own
-                            // requirement — needs a table of requirements the
-                            // game never sends.
-                            self.xp_earned = self.xp_earned.saturating_add(*experience);
-                            self.progressed();
-                        }
+                        self.apply_saved_xp(*experience, *herolevel);
+                    } else {
+                        self.total_xp = *experience;
+                        self.xp_authoritative = true;
                     }
-                    self.total_xp = *experience;
-                    self.xp_authoritative = true;
                 }
                 // The game rebases these statistics itself: after an instance
                 // restart a save can report fewer kills than the one before.
@@ -2155,6 +2146,54 @@ impl GameStats {
     /// rewritten further down the same arm, after the counters have run.
     fn gained_a_hero_level(&self, now: i64) -> bool {
         self.character.as_ref().is_some_and(|c| c.herolevel > 0 && now > c.herolevel)
+    }
+
+    /// Moves the experience total to what a save reports.
+    ///
+    /// A save that lands below the last one without a hero level-up is held
+    /// rather than believed. The game now and then reports a wrong number for a
+    /// single save and the right one a few seconds later (issue #14), and
+    /// taking the wrong one as the new floor credited the whole way back up as
+    /// earned. So a drop waits for the next save. Back at or above the floor:
+    /// the drop was a misread and nothing moves. Below it too: the drop is real.
+    /// When it lands above where the last climb started, that climb was the
+    /// misread and is taken back; when it lands lower still, the game rebased
+    /// and only the floor moves.
+    fn apply_saved_xp(&mut self, experience: i64, herolevel: i64) {
+        if experience >= self.total_xp {
+            let climb = experience - self.total_xp;
+            if climb > 0 {
+                self.xp_earned = self.xp_earned.saturating_add(climb);
+                self.xp_before_climb = Some(self.total_xp);
+                self.progressed();
+            }
+            self.total_xp = experience;
+            self.xp_dip = None;
+            return;
+        }
+        if self.gained_a_hero_level(herolevel) {
+            // `experience` is the XP inside the current hero level and starts
+            // again at each one, so a level-up arrives as a large drop. What
+            // can be recovered is what carried over. The rest, from the last
+            // save up to the level's own requirement, needs a table of
+            // requirements the game never sends.
+            self.xp_earned = self.xp_earned.saturating_add(experience);
+            self.progressed();
+            self.total_xp = experience;
+            self.xp_dip = None;
+            self.xp_before_climb = None;
+            return;
+        }
+        if self.xp_dip.replace(experience).is_none() {
+            return;
+        }
+        if self.xp_before_climb.is_some_and(|floor| experience >= floor) {
+            let misread_climb = self.total_xp - experience;
+            self.xp_earned = self.xp_earned.saturating_sub(misread_climb).max(0);
+        }
+        self.total_xp = experience;
+        self.xp_dip = None;
+        self.xp_before_climb = None;
     }
 
     fn per_hour(&self, value: i64) -> i64 {
@@ -4217,6 +4256,49 @@ mod tests {
         s.apply(&account_at_level(53_600_000, 91));
         s.apply(&account_at_level(2_000_000, 91));
         assert_eq!(s.snapshot(String::new()).xp.earned, 3_600_000);
+    }
+
+    /// Issue #14: one save now and then reports the wrong experience, and the
+    /// next one, seconds later, the right number again. A low misread taken as
+    /// the new floor credited the whole way back up as earned.
+    #[test]
+    fn a_save_that_dips_and_recovers_credits_only_the_real_climb() {
+        let mut s = GameStats::default();
+        s.apply(&account_at_level(50_000_000, 91));
+        s.apply(&account_at_level(50_100_000, 91));
+        s.apply(&account_at_level(1_000_000, 91));
+        assert_eq!(s.snapshot(String::new()).xp.earned, 100_000, "a lone dip is not believed yet");
+        s.apply(&account_at_level(50_200_000, 91));
+        assert_eq!(s.snapshot(String::new()).xp.earned, 200_000);
+    }
+
+    /// The same misread the other way: a high number credited as a climb, then
+    /// two saves that agree it never happened.
+    #[test]
+    fn a_save_that_spikes_and_settles_takes_the_spike_back() {
+        let mut s = GameStats::default();
+        s.apply(&account_at_level(50_000_000, 91));
+        s.apply(&account_at_level(50_100_000, 91));
+        s.apply(&account_at_level(90_000_000, 91));
+        s.apply(&account_at_level(50_150_000, 91));
+        s.apply(&account_at_level(50_200_000, 91));
+        assert_eq!(s.snapshot(String::new()).xp.earned, 200_000);
+        s.apply(&account_at_level(50_300_000, 91));
+        assert_eq!(s.snapshot(String::new()).xp.earned, 300_000, "and the next climb counts from there");
+    }
+
+    /// A drop that two saves agree on, landing below where the last climb
+    /// started, is the game rebasing: the floor moves and nothing is taken back.
+    #[test]
+    fn a_confirmed_drop_below_the_last_climb_moves_the_floor() {
+        let mut s = GameStats::default();
+        s.apply(&account_at_level(50_000_000, 91));
+        s.apply(&account_at_level(53_600_000, 91));
+        s.apply(&account_at_level(2_000_000, 91));
+        s.apply(&account_at_level(2_100_000, 91));
+        assert_eq!(s.snapshot(String::new()).xp.earned, 3_600_000);
+        s.apply(&account_at_level(2_200_000, 91));
+        assert_eq!(s.snapshot(String::new()).xp.earned, 3_700_000);
     }
 
     /// A session that has been running for a while, without waiting for one.
