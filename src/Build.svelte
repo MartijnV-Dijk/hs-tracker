@@ -58,9 +58,10 @@
   function where(name) {
     const drop = lookup(name);
     if (!drop) return t('not in the drop tables');
+    const odds = (rate) => (rate > 0 ? ` · ${oneIn(rate)}` : '');
     return drop.places.length
-      ? `${placeList(drop.places, ', ')} · ${oneIn(drop.there)}`
-      : `${t('anywhere')} · ${oneIn(drop.anywhere)}`;
+      ? `${placeList(drop.places, ', ')}${odds(drop.there)}`
+      : `${t('anywhere')}${odds(drop.anywhere)}`;
   }
 
   const percent = (gain) => `+${(gain * 100).toFixed(gain < 0.1 ? 1 : 0)}%`;

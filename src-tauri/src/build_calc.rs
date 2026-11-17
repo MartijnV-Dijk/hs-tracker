@@ -38,6 +38,15 @@ pub struct Swap {
 
 pub fn report(link: &str, swaps_per_slot: usize) -> Result<BuildReport, String> {
     let (snapshot, _) = codec::decode(link.trim())?;
+    measure(snapshot, swaps_per_slot)
+}
+
+/// HSPlanner measures only the skills marked active, and a shared build can
+/// carry none: the points are spent but nothing is ticked as being cast.
+fn measure(snapshot: BuildSnapshot, swaps_per_slot: usize) -> Result<BuildReport, String> {
+    if snapshot.active_skill_ids.is_empty() {
+        return Err("No skill is marked active in this build, so there is no damage to measure. In HSPlanner's Skills tab, mark the skills you cast as active, then share the build again.".into());
+    }
     let dps = combined_dps(&snapshot.planner_input());
     if !(dps > 0.0) {
         return Err("This build does no damage yet. Pick a main skill for it in HSPlanner.".into());
@@ -124,6 +133,14 @@ mod tests {
         for swap in report.slots.iter().flat_map(|slot| &slot.swaps) {
             assert!(swap.requires_level.is_none_or(|needed| needed <= report.level), "{} is out of reach", swap.name);
         }
+    }
+
+    #[test]
+    fn a_build_with_no_active_skill_says_where_to_set_one() {
+        let (mut snapshot, _) = codec::decode(EXAMPLE).expect("the example decodes");
+        snapshot.active_skill_ids.clear();
+        let refused = measure(snapshot, 3).err().expect("nothing to measure");
+        assert!(refused.contains("Skills tab"), "{refused}");
     }
 
     #[test]
