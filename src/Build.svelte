@@ -16,7 +16,7 @@
     boots: 'Boots', belt: 'Belt', amulet: 'Amulet', ring_1: 'Ring', ring_2: 'Ring',
   };
   const RARITY = { satanic: 'Satanic', satanic_set: 'Set', heroic: 'Heroic', angelic: 'Angelic', unholy: 'Unholy' };
-  const PLACES_SHOWN = 6;
+  const PLACES_SHOWN = 8;
 
   const lookup = dropLookup({ rate: DROP_RATE, chase: DROP_CHASE, places: DROP_PLACES });
 
@@ -55,12 +55,17 @@
 
   const costOf = (swap) => defenseChange(report.defense, swap.defense);
 
-  // Farming advice follows the swaps you could make today without dying more:
-  // a slot whose best swap trades defense away offers its best safe one instead.
-  const bestPerSlot = $derived(
-    (report?.slots ?? []).map((slot) => slot.swaps.find((swap) => keepsDefense(costOf(swap)))?.name).filter(Boolean),
+  // Farming advice covers every swap you could make without dying more, not
+  // only the best per slot: the best is often a one-in-millions drop, and the
+  // next one down may come from a boss you can actually go and kill.
+  const safeSwaps = $derived(
+    (report?.slots ?? []).flatMap((slot) => slot.swaps.filter((swap) => keepsDefense(costOf(swap)))),
   );
-  const farm = $derived(farmPlaces(bestPerSlot, lookup));
+  const gainOf = $derived(
+    safeSwaps.reduce((gains, swap) => gains.set(swap.name, Math.max(gains.get(swap.name) ?? 0, swap.gain)), new Map()),
+  );
+  const farm = $derived(farmPlaces(safeSwaps.map((swap) => swap.name), lookup));
+  const withGain = (name) => `${name} ${percent(gainOf.get(name) ?? 0)}`;
 
   function where(name) {
     const drop = lookup(name);
@@ -158,25 +163,25 @@
 
       <div class="box side" style:border-image-source="url({art('chip_dark')})">
         <div class="head"><span class="accent">{t('Where to farm')}</span></div>
-        <div class="note">{t('For the best swap in each slot that keeps your defense: the places most likely to drop one of them.')}</div>
+        <div class="note">{t('For every swap above that keeps your defense: the places most likely to drop one of them.')}</div>
         {#each farm.places.slice(0, PLACES_SHOWN) as place}
           <div class="place">
             <div class="placehead">
               <span>{placeList([place.place])}</span>
               <span class="dim">{place.chance > 0 ? oneIn(Math.round(1 / place.chance)) : ''}</span>
             </div>
-            <div class="dim">{place.items.join(', ')}</div>
+            <div class="dim">{place.items.map(withGain).join(', ')}</div>
           </div>
         {:else}
           <div class="dim">{t('none of these is tied to a place')}</div>
         {/each}
         {#if farm.anywhere.length}
           <div class="subhead">{t('Drop anywhere')}</div>
-          <div class="dim">{farm.anywhere.map((it) => `${it.name} ${oneIn(it.rate)}`).join(', ')}</div>
+          <div class="dim">{farm.anywhere.map((it) => `${withGain(it.name)} ${oneIn(it.rate)}`).join(', ')}</div>
         {/if}
         {#if farm.unknown.length}
           <div class="subhead">{t('Not in the drop tables')}</div>
-          <div class="dim">{farm.unknown.join(', ')}</div>
+          <div class="dim">{farm.unknown.map(withGain).join(', ')}</div>
         {/if}
       </div>
     </div>
