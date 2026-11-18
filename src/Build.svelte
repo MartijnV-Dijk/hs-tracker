@@ -31,8 +31,16 @@
     error = '';
     try {
       report = await invoke('analyse_build', { link });
-      if (settings && settings.build_link !== link) {
+      const upgrades = [
+        ...new Set(
+          report.slots.flatMap((slot) =>
+            slot.swaps.filter((swap) => keepsDefense(defenseChange(report.defense, swap.defense))).map((swap) => swap.name),
+          ),
+        ),
+      ];
+      if (settings && (settings.build_link !== link || JSON.stringify(settings.build_upgrades ?? []) !== JSON.stringify(upgrades))) {
         settings.build_link = link;
+        settings.build_upgrades = upgrades;
         save();
       }
     } catch (e) {

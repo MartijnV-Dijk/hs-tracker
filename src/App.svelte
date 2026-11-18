@@ -8,10 +8,30 @@
   import { RARITIES, soundUrl, play } from './audio.js';
   import collection666Wav from './assets/sounds/collection_666.wav';
   import { fmt } from './format.js';
+  import { valueLists } from './value.js';
+  import { DROP_RATE, ITEMS, RARITY_BY_NAME, TIER_BY_NAME } from './items.js';
 
   let snap = $state(null);
 
   let cfg = $state(null);
+
+  // This window holds the drop tables, so it works out which items each value
+  // level covers and hands the names to the engine. Only the upgrades and the
+  // muted items change the answer, so any other setting leaves it alone.
+  let valuedFor = '';
+  $effect(() => {
+    if (!cfg) return;
+    const upgrades = cfg.build_upgrades ?? [];
+    const muted = (cfg.muted ?? []).filter((entry) => entry.sound).map((entry) => entry.name);
+    const fingerprint = JSON.stringify([upgrades, muted]);
+    if (fingerprint === valuedFor) return;
+    valuedFor = fingerprint;
+    const { jackpot, good } = valueLists(
+      { items: ITEMS, tier: TIER_BY_NAME, rate: DROP_RATE, rarity: RARITY_BY_NAME },
+      { upgrades, muted },
+    );
+    invoke('set_value_lists', { jackpot, good }).catch(() => {});
+  });
   let locked = $derived(cfg?.locked ?? false);
   /// Whether the cursor is over the strip down the right-hand edge, as the
   /// backend sees it.

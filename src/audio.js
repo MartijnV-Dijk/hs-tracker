@@ -9,6 +9,7 @@ import unholyWav from './assets/sounds/unholy.wav';
 import mailWav from './assets/sounds/mail.wav';
 import relicWav from './assets/sounds/relic.wav';
 import zoneMp3 from './assets/sounds/zone.mp3';
+import jackpotWav from './assets/sounds/collection_666.wav';
 
 /// Every key that owns a sound of its own. Two of them are not rarities at all
 /// — the mail chime and the satanic zone rotating — and they are on this list
@@ -32,7 +33,11 @@ const DEFAULTS = {
   // no rarity sound to take — and a borrowed chime meant a relic and a letter
   // arriving sounded the same. Browse… replaces it like any other key.
   relic: relicWav,
+  value_good: relicWav,
+  value_jackpot: jackpotWav,
 };
+
+export const VALUE_LEVELS = ['value_jackpot', 'value_good'];
 
 /// Every chime the app ships, as something to choose from rather than only as
 /// a fallback. The eight are the eight above; a key can borrow any of them.

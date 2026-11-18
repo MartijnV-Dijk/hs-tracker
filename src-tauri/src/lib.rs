@@ -22,8 +22,8 @@ use tauri::{AppHandle, Emitter, LogicalSize, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// Alert kinds that own a configurable sound (not item rarities — see stats).
-const SOUND_KEYS: [&str; 8] =
-    ["satanic", "set", "heroic", "angelic", "unholy", "mail", "zone", "relic"];
+const SOUND_KEYS: [&str; 10] =
+    ["satanic", "set", "heroic", "angelic", "unholy", "mail", "zone", "relic", "value_good", "value_jackpot"];
 
 /// A sound is either one of the built-in alerts or a list's own file,
 /// named `list-<id>`. Anything else must not reach the filesystem.
@@ -438,6 +438,10 @@ pub struct Settings {
     /// a rarity, so it could not borrow one of the five — every relic in the
     /// game is Common.
     pub relic: SoundCfg,
+    /// The two value levels: drops worth more than their rarity says, by grade,
+    /// by how rarely they fall, or by raising this build's damage.
+    pub value_good: SoundCfg,
+    pub value_jackpot: SoundCfg,
     /// Which relics are worth the alert, by id-in-type. Empty is NONE, which is
     /// the opposite of `zone_buffs` right above and the one thing about this
     /// pair that has to be said out loud wherever either is shown: that list
@@ -590,6 +594,9 @@ pub struct Settings {
     pub overlay_slots: Vec<String>,
     /// The HSPlanner share link the build page last measured.
     pub build_link: String,
+    /// The swaps the build page found that raise damage without costing
+    /// defense; each one is a jackpot when it drops.
+    pub build_upgrades: Vec<String>,
 }
 
 impl Default for Settings {
@@ -611,6 +618,8 @@ impl Default for Settings {
             // field says: an empty relic list is silence either way, so the
             // switch has nothing to announce until a relic is ticked.
             relic: SoundCfg::default(),
+            value_good: SoundCfg::default(),
+            value_jackpot: SoundCfg::default(),
             relics: Vec::new(),
             alerts: stats::JOURNAL_RARITIES.iter().map(|r| r.to_string()).collect(),
             min_tier: 0,
@@ -674,6 +683,7 @@ impl Default for Settings {
             hidden: Vec::new(),
             overlay_slots: Vec::new(),
             build_link: String::new(),
+            build_upgrades: Vec::new(),
         }
     }
 }
@@ -1886,6 +1896,26 @@ fn engine_rule(rule: &SoundRule) -> Option<stats::Rule> {
     Some(stats::Rule { rarity, item_type, weapon: item_type.and(rule.weapon), group })
 }
 
+/// Jackpot names, then good names. Worked out by the overlay window, which holds
+/// the drop tables, and handed over with `set_value_lists`.
+static VALUE_LISTS: std::sync::Mutex<(Vec<String>, Vec<String>)> = std::sync::Mutex::new((Vec::new(), Vec::new()));
+
+/// The value levels as lists placed after the player's own, so a list the
+/// player built still decides the sound for anything it names.
+fn value_listed(settings: &Settings, jackpot: &[String], good: &[String]) -> Vec<stats::Listed> {
+    [("value_jackpot", &settings.value_jackpot, jackpot), ("value_good", &settings.value_good, good)]
+        .into_iter()
+        .filter(|(_, sound, names)| sound.enabled && !names.is_empty())
+        .map(|(key, _, names)| stats::Listed { key: key.into(), names: names.to_vec(), rules: Vec::new() })
+        .collect()
+}
+
+#[tauri::command]
+fn set_value_lists(app: AppHandle, jackpot: Vec<String>, good: Vec<String>) {
+    *VALUE_LISTS.lock().unwrap_or_else(|e| e.into_inner()) = (jackpot, good);
+    apply_stats_settings(&app, &read_settings());
+}
+
 fn apply_stats_settings(app: &AppHandle, settings: &Settings) {
     let active = settings
         .use_filter
@@ -1946,7 +1976,9 @@ fn apply_stats_settings(app: &AppHandle, settings: &Settings) {
         // channel: a hunted relic also takes the journal, and that is not the
         // volume slider's to decide. The pillar is its own switch.
         relics: if settings.relic.enabled { settings.relics.clone() } else { Vec::new() },
-        sound_lists: active
+        sound_lists: {
+            let value = VALUE_LISTS.lock().unwrap_or_else(|e| e.into_inner());
+            let mut lists: Vec<stats::Listed> = active
             .map(|f| {
                 f.lists
                     .iter()
@@ -1962,7 +1994,10 @@ fn apply_stats_settings(app: &AppHandle, settings: &Settings) {
                     .filter(|l| !l.names.is_empty() || !l.rules.is_empty())
                     .collect()
             })
-            .unwrap_or_default(),
+            .unwrap_or_default();
+            lists.extend(value_listed(settings, &value.0, &value.1));
+            lists
+        },
     };
     app.state::<Shared>().stats().set_prefs(prefs);
 }
@@ -4088,6 +4123,7 @@ pub fn run() {
             export_settings,
             save_text_file,
             analyse_build,
+            set_value_lists,
             import_settings,
             import_filter,
             ticker_busy,
@@ -4257,6 +4293,20 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn value_levels_follow_the_players_lists_jackpot_first() {
+        let mut settings = Settings::default();
+        let jackpot = vec!["angelic key".to_string()];
+        let good = vec!["ber".to_string()];
+        let keys: Vec<String> = value_listed(&settings, &jackpot, &good).into_iter().map(|list| list.key).collect();
+        assert_eq!(keys, ["value_jackpot", "value_good"]);
+
+        settings.value_good.enabled = false;
+        let keys: Vec<String> = value_listed(&settings, &jackpot, &good).into_iter().map(|list| list.key).collect();
+        assert_eq!(keys, ["value_jackpot"], "a level switched off adds nothing");
+        assert!(value_listed(&settings, &[], &good).is_empty(), "nor does a level with no names");
+    }
+
     use super::*;
 
     /// The strip follows the panel's edge instead of remembering where it was.
@@ -4340,7 +4390,7 @@ mod tests {
     /// reason: nothing about a wrong answer here is loud.
     #[test]
     fn a_sound_key_cannot_walk_out_of_its_directory() {
-        for good in ["satanic", "set", "heroic", "angelic", "unholy", "mail", "zone", "list-9f3a2b", "list-a-b"] {
+        for good in ["satanic", "set", "heroic", "angelic", "unholy", "mail", "zone", "value_good", "value_jackpot", "list-9f3a2b", "list-a-b"] {
             assert!(sound_key(good), "{good} should be allowed");
         }
         for bad in [
