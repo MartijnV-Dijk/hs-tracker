@@ -5,7 +5,7 @@
   import { rowsOf } from './panel.js';
   import { listen, native } from './bridge.js';
   import { buffInfo, defaultBuffIcon, zoneAct, zoneName, icon } from './buffs.js';
-  import { RARITIES, soundUrl, play } from './audio.js';
+  import { RARITIES, VALUE_LEVELS, WORTH_AFTER_RARITY_MS, soundUrl, play } from './audio.js';
   import collection666Wav from './assets/sounds/collection_666.wav';
   import { fmt } from './format.js';
   import { valueLists } from './value.js';
@@ -115,7 +115,13 @@
         clearTimeout(mailTimer);
         mailTimer = setTimeout(() => (mailFresh = false), 20000);
       }),
-      listen('item-drop', (e) => playSound(...(Array.isArray(e.payload) ? e.payload : [e.payload]))),
+      listen('item-drop', (e) => {
+        const [key, rarity] = Array.isArray(e.payload) ? e.payload : [e.payload];
+        if (!VALUE_LEVELS.includes(key)) return playSound(key, rarity);
+        const rarityKey = String(rarity ?? '').toLowerCase();
+        if (RARITIES.includes(rarityKey)) playSound(rarityKey);
+        setTimeout(() => playSound(key), RARITIES.includes(rarityKey) ? WORTH_AFTER_RARITY_MS : 0);
+      }),
       // The 666th shared find uses its own sound, even when ordinary drop
       // alerts are muted or use a custom chime.
       listen('collection-new', (e) => {

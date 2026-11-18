@@ -407,7 +407,7 @@
       </div>
       <!-- Worth over rarity: these take over from the rarity sound for the
            items each level covers, and a watchlist still takes over from them. -->
-      <div class="subhead" title={t('Jackpot: the rarest third of SS gear, every Angelic and Unholy item, the rarest keys and runes, and the upgrades the Build page found. Good: other SS gear, the rarer S gear and rarer keys and runes.')}>
+      <div class="subhead" title={t('Jackpot: the rarest third of SS gear, every Angelic and Unholy item, the rarest keys and runes, and the upgrades the Build page found. Good: other SS gear, the rarer S gear and rarer keys and runes. It plays just after the rarity chime.')}>
         {t('By worth')}
       </div>
       {#each VALUE_LEVELS as key}
