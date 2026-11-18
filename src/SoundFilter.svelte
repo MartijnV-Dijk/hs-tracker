@@ -341,37 +341,6 @@
         </div>
       {/each}
 
-      <!-- Worth over rarity: these take over from the rarity sound for the
-           items each level covers, and a watchlist still takes over from them. -->
-      <div class="subhead" title={t('Jackpot: the rarest third of SS gear, every Angelic and Unholy item, the rarest keys and runes, and the upgrades the Build page found. Good: other SS gear, the rarer S gear and rarer keys and runes.')}>
-        {t('By worth')}
-      </div>
-      {#each VALUE_LEVELS as key}
-        {@const on = settings[key]?.enabled ?? true}
-        {@const vol = Math.round((settings[key]?.volume ?? 0.5) * 100)}
-        <div class="rrow" class:off={!on}>
-          <button class="check" onclick={() => { settings[key] = { volume: 0.5, ...settings[key], enabled: !on }; save(); }} aria-label={t(key)}>
-            <img src={on ? art('check_on') : art('check_off')} alt="" />
-          </button>
-          <span class="rname {key === 'value_jackpot' ? 'c-gold' : ''}">{key === 'value_jackpot' ? t('Jackpot') : t('Good')}</span>
-          <input class="vol" type="range" min="0" max="100" disabled={!on} value={vol} oninput={(e) => setVolume(key, e.currentTarget.value / 100)} />
-          <span class="pct">{vol}%</span>
-          <span class="src" title={custom[key] ? `sounds/${custom[key]}` : t('built-in sound')}>{custom[key] ?? t('built-in')}</span>
-          <div class="rbtns">
-            <button class="btn sm" style:--btn="url({art('button')})" style:--btn-hover="url({art('button_hover')})" style:--btn-down="url({art('button_down')})" onclick={() => testRarity(key)}>{t("Test")}</button>
-            <button class="btn sm" style:--btn="url({art('button')})" style:--btn-hover="url({art('button_hover')})" style:--btn-down="url({art('button_down')})" onclick={() => pickRaritySound(key)}>{t("Browse…")}</button>
-            <button
-              class="btn sm"
-              style:--btn="url({art('button')})"
-              style:--btn-hover="url({art('button_hover')})"
-              style:--btn-down="url({art('button_down')})"
-              disabled={!custom[key]}
-              onclick={() => danger(`snd-${key}`, () => invoke('clear_sound', { rarity: key }).catch(() => {}))}
-            >{armed === `snd-${key}` ? t('Sure?') : t('Default')}</button>
-          </div>
-        </div>
-      {/each}
-
       <!-- not a drop, but it is a sound and it lived on the tab that went away -->
       <div class="rrow" class:off={!settings.mail?.enabled}>
         <button class="check" onclick={() => { settings.mail.enabled = !settings.mail.enabled; save(); }} aria-label={t("mail")}>
@@ -436,6 +405,37 @@
           >{armed === 'snd-zone' ? t('Sure?') : t('Default')}</button>
         </div>
       </div>
+      <!-- Worth over rarity: these take over from the rarity sound for the
+           items each level covers, and a watchlist still takes over from them. -->
+      <div class="subhead" title={t('Jackpot: the rarest third of SS gear, every Angelic and Unholy item, the rarest keys and runes, and the upgrades the Build page found. Good: other SS gear, the rarer S gear and rarer keys and runes.')}>
+        {t('By worth')}
+      </div>
+      {#each VALUE_LEVELS as key}
+        {@const on = settings[key]?.enabled ?? true}
+        {@const vol = Math.round((settings[key]?.volume ?? 0.5) * 100)}
+        <div class="rrow" class:off={!on}>
+          <button class="check" onclick={() => { settings[key] = { volume: 0.5, ...settings[key], enabled: !on }; save(); }} aria-label={t(key)}>
+            <img src={on ? art('check_on') : art('check_off')} alt="" />
+          </button>
+          <span class="rname {key === 'value_jackpot' ? 'c-gold' : ''}">{key === 'value_jackpot' ? t('Jackpot') : t('Good')}</span>
+          <input class="vol" type="range" min="0" max="100" disabled={!on} value={vol} oninput={(e) => setVolume(key, e.currentTarget.value / 100)} />
+          <span class="pct">{vol}%</span>
+          <span class="src" title={custom[key] ? `sounds/${custom[key]}` : t('built-in sound')}>{custom[key] ?? t('built-in')}</span>
+          <div class="rbtns">
+            <button class="btn sm" style:--btn="url({art('button')})" style:--btn-hover="url({art('button_hover')})" style:--btn-down="url({art('button_down')})" onclick={() => testRarity(key)}>{t("Test")}</button>
+            <button class="btn sm" style:--btn="url({art('button')})" style:--btn-hover="url({art('button_hover')})" style:--btn-down="url({art('button_down')})" onclick={() => pickRaritySound(key)}>{t("Browse…")}</button>
+            <button
+              class="btn sm"
+              style:--btn="url({art('button')})"
+              style:--btn-hover="url({art('button_hover')})"
+              style:--btn-down="url({art('button_down')})"
+              disabled={!custom[key]}
+              onclick={() => danger(`snd-${key}`, () => invoke('clear_sound', { rarity: key }).catch(() => {}))}
+            >{armed === `snd-${key}` ? t('Sure?') : t('Default')}</button>
+          </div>
+        </div>
+      {/each}
+
       <div class="line">
         <span class="name">{t("Min tier")}</span>
         <div class="tiers">
